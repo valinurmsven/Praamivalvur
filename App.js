@@ -8,6 +8,7 @@ import {
   ScrollView,
   StatusBar,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -37,13 +38,16 @@ function shortDate(date) {
   if (!date) return "";
 
   const parts = date.split("-");
-  if (parts.length !== 3) return date;
+
+  if (parts.length !== 3) {
+    return date;
+  }
 
   return `${parts[2]}.${parts[1]}`;
 }
 
 function routeName(code) {
-  return ROUTES.find((r) => r.code === code)?.name || code;
+  return ROUTES.find((route) => route.code === code)?.name || code;
 }
 
 function timeToMinutes(time) {
@@ -51,20 +55,49 @@ function timeToMinutes(time) {
     return 99999;
   }
 
-  const parts = time.split(":");
-
-  if (parts.length !== 2) {
-    return 99999;
-  }
-
-  const hours = Number(parts[0]);
-  const minutes = Number(parts[1]);
+  const [hours, minutes] = time.split(":").map(Number);
 
   if (Number.isNaN(hours) || Number.isNaN(minutes)) {
     return 99999;
   }
 
   return hours * 60 + minutes;
+}
+
+function isValidDate(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function sortDepartures(list) {
+  return [...list].sort(
+    (a, b) => timeToMinutes(a?.time) - timeToMinutes(b?.time)
+  );
+}
+
+function sortWatches(list) {
+  return [...list].sort((a, b) => {
+    const dateA = `${a?.date || ""} ${a?.time || ""}`;
+    const dateB = `${b?.date || ""} ${b?.time || ""}`;
+
+    return dateA.localeCompare(dateB);
+  });
+}
+
+function uniqueWatches(list) {
+  const seen = new Set();
+
+  return list.filter((watch) => {
+    const id =
+      watch?.id ||
+      `${watch?.direction}-${watch?.date}-${watch?.time}`;
+
+    if (seen.has(id)) {
+      return false;
+    }
+
+    seen.add(id);
+    return true;
+  });
 }
 
 export default function App() {
@@ -78,6 +111,15 @@ export default function App() {
   const [loadingWatches, setLoadingWatches] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [savingId, setSavingId] = useState(null);
+  const [removingId, setRemovingId] = useState(null);
+
+  const [profileOpen, setProfileOpen] = useState(true);
+  const [profileSaved, setProfileSaved] = useState(false);
+
+  const [personalCode, setPersonalCode] = useState("");
+  const [email, setEmail] = useState("");
+  const [carRegistration, setCarRegistration] = useState("");
+  const [residentDiscount, setResidentDiscount] = useState(false);
 
   const selectedRoute = useMemo(
     () => ROUTES.find((route) => route.code === direction),
@@ -85,9 +127,14 @@ export default function App() {
   );
 
   async function loadDepartures(showError = true) {
-    if (!date || date.length !== 10) {
+    if (!isValidDate(date)) {
+      setDepartures([]);
+
       if (showError) {
-        Alert.alert("Kontrolli kuupäeva", "Kasuta formaati YYYY-MM-DD.");
+        Alert.alert(
+          "Kontrolli kuupäeva",
+          "Kasuta formaati YYYY-MM-DD."
+        );
       }
 
       return;
@@ -113,13 +160,11 @@ export default function App() {
         ? data
         : [];
 
-      const sortedList = [...list].sort((a, b) => {
-        return timeToMinutes(a?.time) - timeToMinutes(b?.time);
-      });
-
-      setDepartures(sortedList);
+      setDepartures(sortDepartures(list));
     } catch (error) {
       console.log(error);
+
+      setDepartures([]);
 
       if (showError) {
         Alert.alert(
@@ -153,7 +198,7 @@ export default function App() {
         list = data.items;
       }
 
-      setWatches(list);
+      setWatches(sortWatches(uniqueWatches(list)));
     } catch (error) {
       console.log(error);
 
@@ -172,11 +217,19 @@ export default function App() {
     const time = departure?.time;
 
     if (!time) {
-      Alert.alert("Viga", "Selle väljumise kellaaega ei leitud.");
+      Alert.alert(
+        "Viga",
+        "Selle väljumise kellaaega ei leitud."
+      );
+
       return;
     }
 
     const id = `${direction}-${date}-${time}`;
+
+    if (isWatched(time)) {
+      return;
+    }
 
     try {
       setSavingId(id);
@@ -224,6 +277,8 @@ export default function App() {
       `${watch?.direction}-${watch?.date}-${watch?.time}`;
 
     try {
+      setRemovingId(id);
+
       const response = await fetch(
         `${API}/watch?id=${encodeURIComponent(id)}`,
         {
@@ -241,7 +296,15 @@ export default function App() {
         throw new Error(data?.error || `HTTP ${response.status}`);
       }
 
-      await loadWatches(false);
+      setWatches((current) =>
+        current.filter((item) => {
+          const itemId =
+            item?.id ||
+            `${item?.direction}-${item?.date}-${item?.time}`;
+
+          return itemId !== id;
+        })
+      );
     } catch (error) {
       console.log(error);
 
@@ -249,15 +312,19 @@ export default function App() {
         "Ei saanud jälgimist eemaldada",
         String(error?.message || error)
       );
+
+      await loadWatches(false);
+    } finally {
+      setRemovingId(null);
     }
   }
 
   function confirmRemove(watch) {
     Alert.alert(
       "Lõpeta jälgimine?",
-      `${routeName(watch?.direction)}\n${watch?.date || ""} kell ${
-        watch?.time || ""
-      }`,
+      `${routeName(watch?.direction)}\n${
+        watch?.date || ""
+      } kell ${watch?.time || ""}`,
       [
         {
           text: "Tühista",
@@ -272,24 +339,60 @@ export default function App() {
     );
   }
 
-  async function refreshAll() {
-    setRefreshing(true);
+  function saveProfile() {
+    const cleanPersonalCode = personalCode.trim();
+    const cleanEmail = email.trim();
+    const cleanRegistration = carRegistration
+      .trim()
+      .toUpperCase();
 
-    await Promise.all([
-      loadDepartures(false),
-      loadWatches(false),
-    ]);
+    if (
+      cleanPersonalCode &&
+      !/^\d{11}$/.test(cleanPersonalCode)
+    ) {
+      Alert.alert(
+        "Kontrolli isikukoodi",
+        "Isikukood peab olema 11 numbrit."
+      );
 
-    setRefreshing(false);
+      return;
+    }
+
+    if (
+      cleanEmail &&
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)
+    ) {
+      Alert.alert(
+        "Kontrolli e-posti",
+        "Sisesta korrektne e-posti aadress."
+      );
+
+      return;
+    }
+
+    setPersonalCode(cleanPersonalCode);
+    setEmail(cleanEmail);
+    setCarRegistration(cleanRegistration);
+    setProfileSaved(true);
+
+    Alert.alert(
+      "Andmed korras",
+      "Andmed on selles äpi versioonis kasutamiseks valmis."
+    );
   }
 
-  useEffect(() => {
-    loadWatches(false);
-  }, []);
+  async function refreshAll() {
+    try {
+      setRefreshing(true);
 
-  useEffect(() => {
-    loadDepartures(false);
-  }, [direction]);
+      await Promise.all([
+        loadDepartures(false),
+        loadWatches(false),
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   const isWatched = (time) =>
     watches.some(
@@ -300,6 +403,16 @@ export default function App() {
         watch?.active !== false
     );
 
+  useEffect(() => {
+    loadWatches(false);
+  }, []);
+
+  useEffect(() => {
+    if (isValidDate(date)) {
+      loadDepartures(false);
+    }
+  }, [direction, date]);
+
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar barStyle="light-content" />
@@ -307,6 +420,7 @@ export default function App() {
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -318,8 +432,10 @@ export default function App() {
         <View style={styles.header}>
           <Text style={styles.logo}>⛴️</Text>
 
-          <View>
-            <Text style={styles.title}>Praamivalvur</Text>
+          <View style={styles.headerText}>
+            <Text style={styles.title}>
+              Praamivalvur
+            </Text>
 
             <Text style={styles.subtitle}>
               Valva autokohta, mitte brauserit
@@ -327,7 +443,128 @@ export default function App() {
           </View>
         </View>
 
-        <Text style={styles.sectionTitle}>Vali suund</Text>
+        <Pressable
+          onPress={() => setProfileOpen((value) => !value)}
+          style={styles.profileHeader}
+        >
+          <View>
+            <Text style={styles.sectionTitleNoMargin}>
+              Minu andmed
+            </Text>
+
+            <Text style={styles.profileSubtitle}>
+              Pileti vormi eeltäitmiseks
+            </Text>
+          </View>
+
+          <View style={styles.profileHeaderRight}>
+            {profileSaved ? (
+              <View style={styles.savedBadge}>
+                <Text style={styles.savedBadgeText}>
+                  ✓ VALMIS
+                </Text>
+              </View>
+            ) : null}
+
+            <Text style={styles.chevron}>
+              {profileOpen ? "▲" : "▼"}
+            </Text>
+          </View>
+        </Pressable>
+
+        {profileOpen ? (
+          <View style={styles.profileCard}>
+            <Text style={styles.inputLabel}>
+              Isikukood
+            </Text>
+
+            <TextInput
+              value={personalCode}
+              onChangeText={(value) => {
+                setPersonalCode(
+                  value.replace(/[^0-9]/g, "").slice(0, 11)
+                );
+                setProfileSaved(false);
+              }}
+              placeholder="11-kohaline isikukood"
+              placeholderTextColor="#6e7781"
+              style={styles.profileInput}
+              keyboardType="number-pad"
+              maxLength={11}
+            />
+
+            <Text style={styles.inputLabel}>
+              E-posti aadress
+            </Text>
+
+            <TextInput
+              value={email}
+              onChangeText={(value) => {
+                setEmail(value);
+                setProfileSaved(false);
+              }}
+              placeholder="nimi@email.ee"
+              placeholderTextColor="#6e7781"
+              style={styles.profileInput}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+
+            <Text style={styles.inputLabel}>
+              Auto registreerimisnumber
+            </Text>
+
+            <TextInput
+              value={carRegistration}
+              onChangeText={(value) => {
+                setCarRegistration(
+                  value.toUpperCase().replace(/\s/g, "")
+                );
+                setProfileSaved(false);
+              }}
+              placeholder="123ABC"
+              placeholderTextColor="#6e7781"
+              style={styles.profileInput}
+              autoCapitalize="characters"
+              autoCorrect={false}
+            />
+
+            <View style={styles.switchRow}>
+              <View style={styles.switchTextBox}>
+                <Text style={styles.switchTitle}>
+                  Püsielaniku soodustus
+                </Text>
+
+                <Text style={styles.switchSubtitle}>
+                  Kasuta püsielaniku soodustust pileti
+                  vormistamisel
+                </Text>
+              </View>
+
+              <Switch
+                value={residentDiscount}
+                onValueChange={(value) => {
+                  setResidentDiscount(value);
+                  setProfileSaved(false);
+                }}
+              />
+            </View>
+
+            <Pressable
+              onPress={saveProfile}
+              style={styles.saveProfileButton}
+            >
+              <Text style={styles.saveProfileButtonText}>
+                Salvesta andmed
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        <Text style={styles.sectionTitle}>
+          Vali suund
+        </Text>
 
         <View style={styles.routeGrid}>
           {ROUTES.map((route) => {
@@ -336,16 +573,20 @@ export default function App() {
             return (
               <Pressable
                 key={route.code}
-                onPress={() => setDirection(route.code)}
+                onPress={() =>
+                  setDirection(route.code)
+                }
                 style={[
                   styles.routeButton,
-                  selected && styles.routeButtonSelected,
+                  selected &&
+                    styles.routeButtonSelected,
                 ]}
               >
                 <Text
                   style={[
                     styles.routeCode,
-                    selected && styles.routeTextSelected,
+                    selected &&
+                      styles.routeTextSelected,
                   ]}
                 >
                   {route.code}
@@ -354,7 +595,8 @@ export default function App() {
                 <Text
                   style={[
                     styles.routeName,
-                    selected && styles.routeTextSelected,
+                    selected &&
+                      styles.routeTextSelected,
                   ]}
                 >
                   {route.name}
@@ -364,7 +606,9 @@ export default function App() {
           })}
         </View>
 
-        <Text style={styles.sectionTitle}>Kuupäev</Text>
+        <Text style={styles.sectionTitle}>
+          Kuupäev
+        </Text>
 
         <View style={styles.quickDates}>
           {[0, 1, 2, 3].map((offset) => {
@@ -384,13 +628,15 @@ export default function App() {
                 onPress={() => setDate(value)}
                 style={[
                   styles.quickDateButton,
-                  selected && styles.quickDateButtonSelected,
+                  selected &&
+                    styles.quickDateButtonSelected,
                 ]}
               >
                 <Text
                   style={[
                     styles.quickDateText,
-                    selected && styles.quickDateTextSelected,
+                    selected &&
+                      styles.quickDateTextSelected,
                   ]}
                 >
                   {label}
@@ -409,13 +655,16 @@ export default function App() {
             style={styles.dateInput}
             autoCapitalize="none"
             autoCorrect={false}
+            maxLength={10}
           />
 
           <Pressable
             onPress={() => loadDepartures(true)}
             style={styles.loadButton}
           >
-            <Text style={styles.loadButtonText}>Laadi</Text>
+            <Text style={styles.loadButtonText}>
+              Laadi
+            </Text>
           </Pressable>
         </View>
 
@@ -434,7 +683,9 @@ export default function App() {
             Väljumised
           </Text>
 
-          <Pressable onPress={() => loadDepartures(true)}>
+          <Pressable
+            onPress={() => loadDepartures(true)}
+          >
             <Text style={styles.refreshText}>
               Värskenda
             </Text>
@@ -461,10 +712,21 @@ export default function App() {
           </View>
         ) : (
           departures.map((departure, index) => {
-            const time = departure?.time || "--:--";
-            const cars = Number(departure?.cars ?? 0);
-            const passengers = Number(departure?.passengers ?? 0);
-            const trucks = Number(departure?.trucks ?? 0);
+            const time =
+              departure?.time || "--:--";
+
+            const cars = Number(
+              departure?.cars ?? 0
+            );
+
+            const passengers = Number(
+              departure?.passengers ?? 0
+            );
+
+            const trucks = Number(
+              departure?.trucks ?? 0
+            );
+
             const watched = isWatched(time);
             const id = `${direction}-${date}-${time}`;
             const saving = savingId === id;
@@ -476,12 +738,15 @@ export default function App() {
               >
                 <View style={styles.departureTop}>
                   <View>
-                    <Text style={styles.departureTime}>
+                    <Text
+                      style={styles.departureTime}
+                    >
                       {time}
                     </Text>
 
                     <Text style={styles.shipText}>
-                      Laev: {departure?.ship || "—"}
+                      Laev:{" "}
+                      {departure?.ship || "—"}
                     </Text>
                   </View>
 
@@ -493,39 +758,69 @@ export default function App() {
                         : styles.availabilityNo,
                     ]}
                   >
-                    <Text style={styles.availabilityText}>
-                      {cars > 0 ? "KOHTI ON" : "TÄIS"}
+                    <Text
+                      style={
+                        styles.availabilityText
+                      }
+                    >
+                      {cars > 0
+                        ? "KOHTI ON"
+                        : "TÄIS"}
                     </Text>
                   </View>
                 </View>
 
                 <View style={styles.capacityRow}>
                   <View style={styles.capacityBox}>
-                    <Text style={styles.capacityNumber}>
+                    <Text
+                      style={
+                        styles.capacityNumber
+                      }
+                    >
                       {cars}
                     </Text>
 
-                    <Text style={styles.capacityLabel}>
+                    <Text
+                      style={
+                        styles.capacityLabel
+                      }
+                    >
                       autot
                     </Text>
                   </View>
 
                   <View style={styles.capacityBox}>
-                    <Text style={styles.capacityNumber}>
+                    <Text
+                      style={
+                        styles.capacityNumber
+                      }
+                    >
                       {passengers}
                     </Text>
 
-                    <Text style={styles.capacityLabel}>
+                    <Text
+                      style={
+                        styles.capacityLabel
+                      }
+                    >
                       reisijat
                     </Text>
                   </View>
 
                   <View style={styles.capacityBox}>
-                    <Text style={styles.capacityNumber}>
+                    <Text
+                      style={
+                        styles.capacityNumber
+                      }
+                    >
                       {trucks}
                     </Text>
 
-                    <Text style={styles.capacityLabel}>
+                    <Text
+                      style={
+                        styles.capacityLabel
+                      }
+                    >
                       veokit
                     </Text>
                   </View>
@@ -533,11 +828,15 @@ export default function App() {
 
                 <Pressable
                   disabled={watched || saving}
-                  onPress={() => addWatch(departure)}
+                  onPress={() =>
+                    addWatch(departure)
+                  }
                   style={[
                     styles.watchButton,
-                    watched && styles.watchButtonActive,
-                    saving && styles.watchButtonDisabled,
+                    watched &&
+                      styles.watchButtonActive,
+                    saving &&
+                      styles.watchButtonDisabled,
                   ]}
                 >
                   {saving ? (
@@ -546,12 +845,15 @@ export default function App() {
                     <Text
                       style={[
                         styles.watchButtonText,
-                        watched && styles.watchButtonTextActive,
+                        watched &&
+                          styles.watchButtonTextActive,
                       ]}
                     >
                       {watched
                         ? "✓ Jälgimine aktiivne"
-                        : "Jälgi seda väljumist"}
+                        : cars > 0
+                        ? "Jälgi seda väljumist"
+                        : "Jälgi ja teata kui koht tekib"}
                     </Text>
                   )}
                 </Pressable>
@@ -565,14 +867,17 @@ export default function App() {
             Minu jälgimised
           </Text>
 
-          <Pressable onPress={() => loadWatches(true)}>
+          <Pressable
+            onPress={() => loadWatches(true)}
+          >
             <Text style={styles.refreshText}>
               Värskenda
             </Text>
           </Pressable>
         </View>
 
-        {loadingWatches && watches.length === 0 ? (
+        {loadingWatches &&
+        watches.length === 0 ? (
           <View style={styles.loadingBox}>
             <ActivityIndicator size="large" />
           </View>
@@ -583,29 +888,47 @@ export default function App() {
             </Text>
 
             <Text style={styles.emptyText}>
-              Vajuta mõne väljumise juures „Jälgi seda väljumist”.
+              Vajuta soovitud väljumise juures
+              jälgimise nuppu.
             </Text>
           </View>
         ) : (
           watches.map((watch, index) => {
-            const cars = Number(watch?.lastCars ?? 0);
+            const id =
+              watch?.id ||
+              `${watch?.direction}-${watch?.date}-${watch?.time}`;
+
+            const cars = Number(
+              watch?.lastCars ?? 0
+            );
 
             const available =
-              watch?.availableNow === true || cars > 0;
+              watch?.availableNow === true ||
+              cars > 0;
+
+            const removing =
+              removingId === id;
 
             return (
               <View
-                key={watch?.id || `watch-${index}`}
+                key={id || `watch-${index}`}
                 style={styles.watchCard}
               >
                 <View style={styles.watchCardTop}>
                   <View style={styles.watchCardInfo}>
-                    <Text style={styles.watchRoute}>
-                      {routeName(watch?.direction)}
+                    <Text
+                      style={styles.watchRoute}
+                    >
+                      {routeName(
+                        watch?.direction
+                      )}
                     </Text>
 
-                    <Text style={styles.watchDate}>
-                      {watch?.date || "—"} · {watch?.time || "—"}
+                    <Text
+                      style={styles.watchDate}
+                    >
+                      {watch?.date || "—"} ·{" "}
+                      {watch?.time || "—"}
                     </Text>
                   </View>
 
@@ -617,7 +940,11 @@ export default function App() {
                         : styles.watchStatusWaiting,
                     ]}
                   >
-                    <Text style={styles.watchStatusText}>
+                    <Text
+                      style={
+                        styles.watchStatusText
+                      }
+                    >
                       {available
                         ? `${cars} kohta`
                         : "Ootan"}
@@ -641,12 +968,27 @@ export default function App() {
                 ) : null}
 
                 <Pressable
-                  onPress={() => confirmRemove(watch)}
-                  style={styles.removeButton}
+                  disabled={removing}
+                  onPress={() =>
+                    confirmRemove(watch)
+                  }
+                  style={[
+                    styles.removeButton,
+                    removing &&
+                      styles.removeButtonDisabled,
+                  ]}
                 >
-                  <Text style={styles.removeButtonText}>
-                    Lõpeta jälgimine
-                  </Text>
+                  {removing ? (
+                    <ActivityIndicator />
+                  ) : (
+                    <Text
+                      style={
+                        styles.removeButtonText
+                      }
+                    >
+                      Lõpeta jälgimine
+                    </Text>
+                  )}
                 </Pressable>
               </View>
             );
@@ -654,8 +996,8 @@ export default function App() {
         )}
 
         <Text style={styles.footer}>
-          Praamivalvur kontrollib jälgimisi serveris ka siis,
-          kui äpp on kinni.
+          Praamivalvur kontrollib jälgimisi
+          serveris ka siis, kui äpp on kinni.
         </Text>
       </ScrollView>
     </SafeAreaView>
@@ -674,14 +1016,18 @@ const styles = StyleSheet.create({
 
   content: {
     padding: 18,
-    paddingBottom: 50,
+    paddingBottom: 60,
   },
 
   header: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 28,
+    marginBottom: 24,
     marginTop: 8,
+  },
+
+  headerText: {
+    flex: 1,
   },
 
   logo: {
@@ -706,13 +1052,122 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "800",
     marginBottom: 12,
-    marginTop: 8,
+    marginTop: 16,
   },
 
   sectionTitleNoMargin: {
     color: "#ffffff",
     fontSize: 20,
     fontWeight: "800",
+  },
+
+  profileHeader: {
+    backgroundColor: "#101c2b",
+    borderColor: "#26384d",
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+
+  profileHeaderRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+
+  profileSubtitle: {
+    color: "#8292a2",
+    marginTop: 4,
+  },
+
+  savedBadge: {
+    backgroundColor: "#173d2b",
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 9,
+  },
+
+  savedBadgeText: {
+    color: "#dff7e9",
+    fontSize: 10,
+    fontWeight: "900",
+  },
+
+  chevron: {
+    color: "#f4c400",
+    fontSize: 16,
+    fontWeight: "900",
+  },
+
+  profileCard: {
+    backgroundColor: "#0d1724",
+    borderColor: "#1c2a3a",
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+  },
+
+  inputLabel: {
+    color: "#c9d3dd",
+    fontSize: 13,
+    fontWeight: "800",
+    marginBottom: 7,
+  },
+
+  profileInput: {
+    backgroundColor: "#101c2b",
+    color: "#ffffff",
+    borderColor: "#26384d",
+    borderWidth: 1,
+    borderRadius: 13,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    fontSize: 16,
+    marginBottom: 16,
+  },
+
+  switchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 18,
+    gap: 14,
+  },
+
+  switchTextBox: {
+    flex: 1,
+  },
+
+  switchTitle: {
+    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "800",
+  },
+
+  switchSubtitle: {
+    color: "#8292a2",
+    fontSize: 12,
+    marginTop: 4,
+    lineHeight: 17,
+  },
+
+  saveProfileButton: {
+    backgroundColor: "#f4c400",
+    borderRadius: 13,
+    minHeight: 48,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  saveProfileButtonText: {
+    color: "#08111f",
+    fontWeight: "900",
+    fontSize: 15,
   },
 
   routeGrid: {
@@ -955,6 +1410,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     borderRadius: 13,
+    paddingHorizontal: 10,
   },
 
   watchButtonActive: {
@@ -968,7 +1424,8 @@ const styles = StyleSheet.create({
   watchButtonText: {
     color: "#08111f",
     fontWeight: "900",
-    fontSize: 15,
+    fontSize: 14,
+    textAlign: "center",
   },
 
   watchButtonTextActive: {
@@ -1040,7 +1497,12 @@ const styles = StyleSheet.create({
     borderColor: "#63323a",
     borderRadius: 12,
     alignItems: "center",
-    paddingVertical: 11,
+    justifyContent: "center",
+    minHeight: 44,
+  },
+
+  removeButtonDisabled: {
+    opacity: 0.6,
   },
 
   removeButtonText: {
