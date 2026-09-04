@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Praamivalvur",
+    "name": "praamivalvur",
     "slug": "praamivalvur",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -15,14 +15,10 @@
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
-      },
-      "package": "ee.valinurmsven.praamivalvur"
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    },
-    "plugins": [
-      "expo-notifications"
-    ]
+    }
   }
 }

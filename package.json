@@ -4,9 +4,6 @@
   "main": "index.js",
   "dependencies": {
     "expo": "~57.0.20",
-    "expo-constants": "^57.0.17",
-    "expo-device": "^57.0.1",
-    "expo-notifications": "^57.0.17",
     "expo-status-bar": "~57.0.1",
     "react": "19.2.3",
     "react-native": "0.86.3"
