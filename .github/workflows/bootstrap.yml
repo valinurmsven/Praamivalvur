@@ -1,0 +1,260 @@
+name: Bootstrap Praamivalvur
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Create Expo project
+        run: |
+          rm -rf /tmp/praamivalvur
+          npx create-expo-app@latest /tmp/praamivalvur --template blank --yes
+
+          cp -R /tmp/praamivalvur/. .
+          rm -rf .git
+
+          npm install expo-notifications expo-device expo-constants
+
+      - name: Create App.js
+        run: |
+          cat > App.js <<'EOF'
+          import React, { useEffect, useState } from 'react';
+          import {
+            SafeAreaView,
+            ScrollView,
+            Text,
+            Pressable,
+            View,
+            StyleSheet,
+            ActivityIndicator,
+          } from 'react-native';
+          import * as Notifications from 'expo-notifications';
+
+          const API = 'https://praamivalvur-api.valinurmsven.workers.dev';
+
+          const routes = [
+            ['VK', 'Virtsu → Kuivastu'],
+            ['KV', 'Kuivastu → Virtsu'],
+            ['RH', 'Rohuküla → Heltermaa'],
+            ['HR', 'Heltermaa → Rohuküla'],
+          ];
+
+          function today() {
+            const d = new Date();
+            return d.toISOString().slice(0, 10);
+          }
+
+          export default function App() {
+            const [route, setRoute] = useState('VK');
+            const [departures, setDepartures] = useState([]);
+            const [loading, setLoading] = useState(false);
+
+            async function load() {
+              setLoading(true);
+
+              try {
+                const r = await fetch(
+                  `${API}/?direction=${route}&date=${today()}`
+                );
+
+                const data = await r.json();
+                setDepartures(data.departures || []);
+              } catch (e) {
+                setDepartures([]);
+              }
+
+              setLoading(false);
+            }
+
+            async function enableNotifications() {
+              await Notifications.requestPermissionsAsync();
+            }
+
+            useEffect(() => {
+              enableNotifications();
+            }, []);
+
+            useEffect(() => {
+              load();
+            }, [route]);
+
+            async function watch(time) {
+              await fetch(`${API}/watch`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  direction: route,
+                  date: today(),
+                  time,
+                }),
+              });
+            }
+
+            return (
+              <SafeAreaView style={styles.page}>
+                <ScrollView contentContainerStyle={styles.content}>
+                  <Text style={styles.title}>Praamivalvur 🚢</Text>
+
+                  <View style={styles.routes}>
+                    {routes.map(([code, name]) => (
+                      <Pressable
+                        key={code}
+                        style={[
+                          styles.route,
+                          route === code && styles.selected,
+                        ]}
+                        onPress={() => setRoute(code)}
+                      >
+                        <Text style={styles.routeText}>{name}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+
+                  {loading ? (
+                    <ActivityIndicator size="large" />
+                  ) : (
+                    departures.map((d, i) => (
+                      <View key={`${d.time}-${i}`} style={styles.card}>
+                        <Text style={styles.time}>{d.time}</Text>
+                        <Text style={styles.info}>
+                          🚗 Autosid: {d.cars ?? '–'}
+                        </Text>
+                        <Text style={styles.info}>
+                          👤 Reisijaid: {d.passengers ?? '–'}
+                        </Text>
+
+                        <Pressable
+                          style={styles.watch}
+                          onPress={() => watch(d.time)}
+                        >
+                          <Text style={styles.watchText}>Jälgi</Text>
+                        </Pressable>
+                      </View>
+                    ))
+                  )}
+                </ScrollView>
+              </SafeAreaView>
+            );
+          }
+
+          const styles = StyleSheet.create({
+            page: {
+              flex: 1,
+              backgroundColor: '#0f172a',
+            },
+            content: {
+              padding: 18,
+            },
+            title: {
+              color: 'white',
+              fontSize: 30,
+              fontWeight: '900',
+              marginBottom: 20,
+            },
+            routes: {
+              gap: 10,
+              marginBottom: 20,
+            },
+            route: {
+              backgroundColor: '#1e293b',
+              padding: 14,
+              borderRadius: 14,
+            },
+            selected: {
+              backgroundColor: '#2563eb',
+            },
+            routeText: {
+              color: 'white',
+              fontWeight: '700',
+            },
+            card: {
+              backgroundColor: '#1e293b',
+              borderRadius: 16,
+              padding: 16,
+              marginBottom: 12,
+            },
+            time: {
+              color: 'white',
+              fontSize: 26,
+              fontWeight: '900',
+            },
+            info: {
+              color: '#cbd5e1',
+              marginTop: 7,
+            },
+            watch: {
+              marginTop: 14,
+              backgroundColor: '#2563eb',
+              padding: 12,
+              borderRadius: 12,
+              alignItems: 'center',
+            },
+            watchText: {
+              color: 'white',
+              fontWeight: '900',
+            },
+          });
+          EOF
+
+      - name: Configure Expo
+        run: |
+          node - <<'EOF'
+          const fs = require('fs');
+
+          const app = JSON.parse(fs.readFileSync('app.json'));
+
+          app.expo.name = 'Praamivalvur';
+          app.expo.slug = 'praamivalvur';
+          app.expo.android = {
+            ...(app.expo.android || {}),
+            package: 'ee.valinurmsven.praamivalvur'
+          };
+
+          app.expo.plugins = [
+            ...(app.expo.plugins || []),
+            'expo-notifications'
+          ];
+
+          fs.writeFileSync(
+            'app.json',
+            JSON.stringify(app, null, 2)
+          );
+          EOF
+
+          cat > eas.json <<'EOF'
+          {
+            "build": {
+              "preview": {
+                "distribution": "internal",
+                "android": {
+                  "buildType": "apk"
+                }
+              }
+            }
+          }
+          EOF
+
+      - name: Commit project
+        run: |
+          git config user.name "Praamivalvur Bot"
+          git config user.email "actions@github.com"
+
+          git add .
+          git commit -m "Create Praamivalvur Expo app" || true
+          git push
