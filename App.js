@@ -46,6 +46,27 @@ function routeName(code) {
   return ROUTES.find((r) => r.code === code)?.name || code;
 }
 
+function timeToMinutes(time) {
+  if (!time || typeof time !== "string") {
+    return 99999;
+  }
+
+  const parts = time.split(":");
+
+  if (parts.length !== 2) {
+    return 99999;
+  }
+
+  const hours = Number(parts[0]);
+  const minutes = Number(parts[1]);
+
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) {
+    return 99999;
+  }
+
+  return hours * 60 + minutes;
+}
+
 export default function App() {
   const [direction, setDirection] = useState("VK");
   const [date, setDate] = useState(localDate(0));
@@ -68,6 +89,7 @@ export default function App() {
       if (showError) {
         Alert.alert("Kontrolli kuupäeva", "Kasuta formaati YYYY-MM-DD.");
       }
+
       return;
     }
 
@@ -91,7 +113,11 @@ export default function App() {
         ? data
         : [];
 
-      setDepartures(list);
+      const sortedList = [...list].sort((a, b) => {
+        return timeToMinutes(a?.time) - timeToMinutes(b?.time);
+      });
+
+      setDepartures(sortedList);
     } catch (error) {
       console.log(error);
 
@@ -294,6 +320,7 @@ export default function App() {
 
           <View>
             <Text style={styles.title}>Praamivalvur</Text>
+
             <Text style={styles.subtitle}>
               Valva autokohta, mitte brauserit
             </Text>
@@ -397,25 +424,37 @@ export default function App() {
             {selectedRoute?.name}
           </Text>
 
-          <Text style={styles.selectedInfoDate}>{date}</Text>
+          <Text style={styles.selectedInfoDate}>
+            {date}
+          </Text>
         </View>
 
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitleNoMargin}>Väljumised</Text>
+          <Text style={styles.sectionTitleNoMargin}>
+            Väljumised
+          </Text>
 
           <Pressable onPress={() => loadDepartures(true)}>
-            <Text style={styles.refreshText}>Värskenda</Text>
+            <Text style={styles.refreshText}>
+              Värskenda
+            </Text>
           </Pressable>
         </View>
 
         {loadingDepartures ? (
           <View style={styles.loadingBox}>
             <ActivityIndicator size="large" />
-            <Text style={styles.loadingText}>Laen väljumisi...</Text>
+
+            <Text style={styles.loadingText}>
+              Laen väljumisi...
+            </Text>
           </View>
         ) : departures.length === 0 ? (
           <View style={styles.emptyBox}>
-            <Text style={styles.emptyTitle}>Väljumisi ei leitud</Text>
+            <Text style={styles.emptyTitle}>
+              Väljumisi ei leitud
+            </Text>
+
             <Text style={styles.emptyText}>
               Kontrolli kuupäeva ja proovi uuesti.
             </Text>
@@ -431,10 +470,15 @@ export default function App() {
             const saving = savingId === id;
 
             return (
-              <View key={`${time}-${index}`} style={styles.departureCard}>
+              <View
+                key={`${time}-${index}`}
+                style={styles.departureCard}
+              >
                 <View style={styles.departureTop}>
                   <View>
-                    <Text style={styles.departureTime}>{time}</Text>
+                    <Text style={styles.departureTime}>
+                      {time}
+                    </Text>
 
                     <Text style={styles.shipText}>
                       Laev: {departure?.ship || "—"}
@@ -457,20 +501,33 @@ export default function App() {
 
                 <View style={styles.capacityRow}>
                   <View style={styles.capacityBox}>
-                    <Text style={styles.capacityNumber}>{cars}</Text>
-                    <Text style={styles.capacityLabel}>autot</Text>
+                    <Text style={styles.capacityNumber}>
+                      {cars}
+                    </Text>
+
+                    <Text style={styles.capacityLabel}>
+                      autot
+                    </Text>
                   </View>
 
                   <View style={styles.capacityBox}>
                     <Text style={styles.capacityNumber}>
                       {passengers}
                     </Text>
-                    <Text style={styles.capacityLabel}>reisijat</Text>
+
+                    <Text style={styles.capacityLabel}>
+                      reisijat
+                    </Text>
                   </View>
 
                   <View style={styles.capacityBox}>
-                    <Text style={styles.capacityNumber}>{trucks}</Text>
-                    <Text style={styles.capacityLabel}>veokit</Text>
+                    <Text style={styles.capacityNumber}>
+                      {trucks}
+                    </Text>
+
+                    <Text style={styles.capacityLabel}>
+                      veokit
+                    </Text>
                   </View>
                 </View>
 
@@ -492,7 +549,9 @@ export default function App() {
                         watched && styles.watchButtonTextActive,
                       ]}
                     >
-                      {watched ? "✓ Jälgimine aktiivne" : "Jälgi seda väljumist"}
+                      {watched
+                        ? "✓ Jälgimine aktiivne"
+                        : "Jälgi seda väljumist"}
                     </Text>
                   )}
                 </Pressable>
@@ -502,10 +561,14 @@ export default function App() {
         )}
 
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitleNoMargin}>Minu jälgimised</Text>
+          <Text style={styles.sectionTitleNoMargin}>
+            Minu jälgimised
+          </Text>
 
           <Pressable onPress={() => loadWatches(true)}>
-            <Text style={styles.refreshText}>Värskenda</Text>
+            <Text style={styles.refreshText}>
+              Värskenda
+            </Text>
           </Pressable>
         </View>
 
@@ -526,6 +589,7 @@ export default function App() {
         ) : (
           watches.map((watch, index) => {
             const cars = Number(watch?.lastCars ?? 0);
+
             const available =
               watch?.availableNow === true || cars > 0;
 
@@ -554,7 +618,9 @@ export default function App() {
                     ]}
                   >
                     <Text style={styles.watchStatusText}>
-                      {available ? `${cars} kohta` : "Ootan"}
+                      {available
+                        ? `${cars} kohta`
+                        : "Ootan"}
                     </Text>
                   </View>
                 </View>
@@ -568,7 +634,9 @@ export default function App() {
                 {watch?.lastCheckedAt ? (
                   <Text style={styles.watchMeta}>
                     Viimane kontroll:{" "}
-                    {new Date(watch.lastCheckedAt).toLocaleString()}
+                    {new Date(
+                      watch.lastCheckedAt
+                    ).toLocaleString()}
                   </Text>
                 ) : null}
 
@@ -586,7 +654,8 @@ export default function App() {
         )}
 
         <Text style={styles.footer}>
-          Praamivalvur kontrollib jälgimisi serveris ka siis, kui äpp on kinni.
+          Praamivalvur kontrollib jälgimisi serveris ka siis,
+          kui äpp on kinni.
         </Text>
       </ScrollView>
     </SafeAreaView>
