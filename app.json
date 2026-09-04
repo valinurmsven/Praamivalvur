@@ -1,15 +1,17 @@
 {
   "expo": {
-    "name": "praamivalvur",
+    "name": "Praamivalvur",
     "slug": "praamivalvur",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "ee.valinurmsven.praamivalvur"
     },
     "android": {
+      "package": "ee.valinurmsven.praamivalvur",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
