@@ -256,4 +256,132 @@ jobs:
             },
 
             routeText: {
-              color: '
+              color: 'white',
+              fontWeight: '700',
+            },
+
+            refreshButton: {
+              backgroundColor: '#334155',
+              borderRadius: 12,
+              padding: 12,
+              alignItems: 'center',
+              marginBottom: 18,
+            },
+
+            refreshText: {
+              color: 'white',
+              fontWeight: '800',
+            },
+
+            card: {
+              backgroundColor: '#1e293b',
+              borderRadius: 16,
+              padding: 16,
+              marginBottom: 12,
+            },
+
+            cardTop: {
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            },
+
+            time: {
+              color: 'white',
+              fontSize: 27,
+              fontWeight: '900',
+            },
+
+            ship: {
+              color: '#94a3b8',
+              fontWeight: '700',
+            },
+
+            info: {
+              color: '#cbd5e1',
+              marginTop: 7,
+              fontSize: 15,
+            },
+
+            watchButton: {
+              marginTop: 14,
+              backgroundColor: '#2563eb',
+              padding: 12,
+              borderRadius: 12,
+              alignItems: 'center',
+            },
+
+            watchText: {
+              color: 'white',
+              fontWeight: '900',
+            },
+          });
+          EOF
+
+      - name: Configure Expo
+        run: |
+          node - <<'EOF'
+          const fs = require('fs');
+
+          const app = JSON.parse(
+            fs.readFileSync('app.json', 'utf8')
+          );
+
+          app.expo.name = 'Praamivalvur';
+          app.expo.slug = 'praamivalvur';
+
+          app.expo.android = {
+            ...(app.expo.android || {}),
+            package: 'ee.valinurmsven.praamivalvur'
+          };
+
+          app.expo.plugins = [
+            ...new Set([
+              ...(app.expo.plugins || []),
+              'expo-notifications'
+            ])
+          ];
+
+          fs.writeFileSync(
+            'app.json',
+            JSON.stringify(app, null, 2)
+          );
+          EOF
+
+          cat > eas.json <<'EOF'
+          {
+            "build": {
+              "preview": {
+                "distribution": "internal",
+                "android": {
+                  "buildType": "apk"
+                }
+              }
+            }
+          }
+          EOF
+
+      - name: Create EAS workflow
+        run: |
+          mkdir -p .eas/workflows
+
+          cat > .eas/workflows/build.yml <<'EOF'
+          name: Build Praamivalvur APK
+
+          jobs:
+            build_android:
+              name: Build Android APK
+              type: build
+              params:
+                platform: android
+                profile: preview
+          EOF
+
+      - name: Commit project
+        run: |
+          git config user.name "Praamivalvur Bot"
+          git config user.email "actions@github.com"
+
+          git add .
+          git commit -m "Create Praamivalvur Expo app" || true
+          git push origin HEAD:main
