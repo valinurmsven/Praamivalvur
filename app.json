@@ -14,9 +14,6 @@
 
     "android": {
       "package": "ee.valinurmsven.praamivalvur",
-      "permissions": [
-        "POST_NOTIFICATIONS"
-      ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -25,23 +22,19 @@
       }
     },
 
-    "web": {
-      "favicon": "./assets/favicon.png"
-    },
-
     "plugins": [
       "expo-notifications",
       "expo-secure-store"
     ],
 
-    "notification": {
-      "icon": "./assets/icon.png"
-    },
-
     "extra": {
       "eas": {
         "projectId": "ce184ab9-55c9-4442-a850-e7a0e429b90d"
       }
+    },
+
+    "web": {
+      "favicon": "./assets/favicon.png"
     }
   }
 }
