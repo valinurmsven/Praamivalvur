@@ -19,11 +19,14 @@ jobs:
         with:
           node-version: 22
 
-      - name: Install packages
+      - name: Install existing dependencies
+        run: npm install
+
+      - name: Install Expo packages
         run: |
           npx expo install expo-notifications expo-device expo-constants expo-secure-store
 
-      - name: Commit package lock
+      - name: Commit package files
         run: |
           git config user.name "Praamivalvur Bot"
           git config user.email "actions@github.com"
